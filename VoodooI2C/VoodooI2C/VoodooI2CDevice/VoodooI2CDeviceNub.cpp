@@ -154,43 +154,86 @@ IOReturn VoodooI2CDeviceNub::getDeviceResourcesDSM(UInt32 index, OSObject **resu
     return evaluateDSM(I2C_DSM_TP7G, index, result);
 }
 
+IOReturn VoodooI2CDeviceNub::parseResourceObject(OSObject* object, VoodooI2CACPIResourcesParser* res_parser, const char* source) {
+    if (!object) {
+        IOLog("%s::%s %s returned no object\n", getName(), acpi_device->getName(), source);
+        return kIOReturnNotFound;
+    }
+
+    OSData* data = OSDynamicCast(OSData, object);
+    if (data) {
+        uint8_t const* bytes = reinterpret_cast<uint8_t const*>(data->getBytesNoCopy());
+        if (!bytes || !data->getLength()) {
+            IOLog("%s::%s %s returned empty data\n", getName(), acpi_device->getName(), source);
+            return kIOReturnNotFound;
+        }
+
+        IOLog("%s::%s %s returned %u bytes (first byte 0x%02x)\n",
+              getName(), acpi_device->getName(), source,
+              (unsigned)data->getLength(), bytes[0]);
+
+        res_parser->parseACPIResources(bytes, 0, data->getLength());
+        return kIOReturnSuccess;
+    }
+
+    // Some firmware hands back a package of resource buffers instead of one
+    // contiguous resource template.
+    OSArray* array = OSDynamicCast(OSArray, object);
+    if (array) {
+        bool parsed = false;
+
+        IOLog("%s::%s %s returned an array of %u entries\n",
+              getName(), acpi_device->getName(), source, array->getCount());
+
+        for (unsigned i = 0; i < array->getCount(); i++) {
+            OSData* element = OSDynamicCast(OSData, array->getObject(i));
+            if (element && element->getBytesNoCopy() && element->getLength()) {
+                res_parser->parseACPIResources(
+                    reinterpret_cast<uint8_t const*>(element->getBytesNoCopy()),
+                    0, element->getLength());
+                parsed = true;
+            }
+        }
+
+        return parsed ? kIOReturnSuccess : kIOReturnNotFound;
+    }
+
+    IOLog("%s::%s %s returned an unsupported object type\n",
+          getName(), acpi_device->getName(), source);
+    return kIOReturnNotFound;
+}
+
 IOReturn VoodooI2CDeviceNub::parseResourcesCRS(VoodooI2CACPIResourcesParser* res_parser) {
-    OSObject *result = nullptr;
-    OSData *data = nullptr;
-    if (acpi_device->evaluateObject("_CRS", &result) != kIOReturnSuccess ||
-        !(data = OSDynamicCast(OSData, result))) {
-        IOLog("%s::%s Could not find or evaluate _CRS method\n", getName(), acpi_device->getName());
+    OSObject* result = nullptr;
+
+    IOReturn status = acpi_device->evaluateObject("_CRS", &result);
+    if (status != kIOReturnSuccess) {
+        IOLog("%s::%s Could not evaluate _CRS (0x%x)\n", getName(), acpi_device->getName(), status);
+        setProperty("ACPI _CRS", "evaluate failed");
         OSSafeReleaseNULL(result);
         return kIOReturnNotFound;
     }
 
-    uint8_t const* crs = reinterpret_cast<uint8_t const*>(data->getBytesNoCopy());
-    res_parser->parseACPIResources(crs, 0, data->getLength());
+    status = parseResourceObject(result, res_parser, "ACPI _CRS");
 
-    OSSafeReleaseNULL(data);
-
-    IOLog("%s::%s Found valid resources from _CRS method\n", getName(), acpi_device->getName());
-
-    return kIOReturnSuccess;
+    OSSafeReleaseNULL(result);
+    return status;
 }
 
 IOReturn VoodooI2CDeviceNub::parseResourcesDSM(VoodooI2CACPIResourcesParser* res_parser) {
-    OSObject *result = nullptr;
-    OSData *data = nullptr;
-    if (getDeviceResourcesDSM(TP7G_RESOURCES_INDEX, &result) != kIOReturnSuccess ||
-        !(data = OSDynamicCast(OSData, result))) {
+    OSObject* result = nullptr;
+
+    if (getDeviceResourcesDSM(TP7G_RESOURCES_INDEX, &result) != kIOReturnSuccess) {
         IOLog("%s::%s Could not retrieve resources from _DSM or XDSM method\n", getName(), acpi_device->getName());
+        setProperty("ACPI _DSM", "unavailable");
         OSSafeReleaseNULL(result);
         return kIOReturnNotFound;
     }
 
-    uint8_t const* crs = reinterpret_cast<uint8_t const*>(data->getBytesNoCopy());
-    res_parser->parseACPIResources(crs, 0, data->getLength());
+    IOReturn status = parseResourceObject(result, res_parser, "ACPI _DSM");
 
-    OSSafeReleaseNULL(data);
-
-    IOLog("%s::%s Found valid resources from _DSM or XDSM method\n", getName(), acpi_device->getName());
-    return kIOReturnSuccess;
+    OSSafeReleaseNULL(result);
+    return status;
 }
 
 IOReturn VoodooI2CDeviceNub::validateAPICInterrupt() {
@@ -219,7 +262,36 @@ IOReturn VoodooI2CDeviceNub::getDeviceResources() {
     parseResourcesDSM(&dsm_parser);
 
     if (!crs_parser.found_i2c && !dsm_parser.found_i2c) {
+        /*
+         * Last resort for firmware which keeps the serial bus description in
+         * device scope names instead of _CRS. Lenovo/Insyde tables commonly
+         * declare SBFB (I2C) and SBFG (GPIO interrupt) and only return the
+         * legacy interrupt template from _CRS; the _CRS method still writes
+         * the runtime slave address into SBFB before it returns, so parsing
+         * the names directly recovers the real bus and address.
+         */
+        VoodooI2CACPIResourcesParser scope_parser;
+        OSObject* object = nullptr;
+
+        if (acpi_device->evaluateObject("SBFB", &object) == kIOReturnSuccess)
+            parseResourceObject(object, &scope_parser, "ACPI SBFB");
+        OSSafeReleaseNULL(object);
+
+        if (acpi_device->evaluateObject("SBFG", &object) == kIOReturnSuccess)
+            parseResourceObject(object, &scope_parser, "ACPI SBFG");
+        OSSafeReleaseNULL(object);
+
+        if (scope_parser.found_i2c) {
+            IOLog("%s::%s Recovered I2C resources from device scope names (SBFB/SBFG)\n",
+                  getName(), acpi_device->getName());
+            setProperty("ACPI Resource Source", "device scope SBFB/SBFG");
+            crs_parser = scope_parser;
+        }
+    }
+
+    if (!crs_parser.found_i2c && !dsm_parser.found_i2c) {
         IOLog("%s::%s Could not find an I2C Serial Bus declaration\n", getName(), acpi_device->getName());
+        setProperty("ACPI Resource Source", "none");
         return kIOReturnNotFound;
     }
 
@@ -264,6 +336,9 @@ IOReturn VoodooI2CDeviceNub::getDeviceResources() {
           getName(), acpi_device->getName(),
           (bus_parser == &crs_parser) ? "_CRS" : "_DSM",
           i2c_address, bus_parser->i2c_info.bus_speed);
+
+    if (getProperty("ACPI Resource Source") == nullptr)
+        setProperty("ACPI Resource Source", (bus_parser == &crs_parser) ? "_CRS" : "_DSM");
 
     // There is actually no way to avoid APIC interrupt if it is valid
     if (validateAPICInterrupt() == kIOReturnSuccess)

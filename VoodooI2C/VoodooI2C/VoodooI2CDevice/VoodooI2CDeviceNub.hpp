@@ -237,6 +237,16 @@ class EXPORT VoodooI2CDeviceNub : public IOService {
 
     IOReturn parseResourcesDSM(VoodooI2CACPIResourcesParser* res_parser);
 
+    /* Parses an ACPI object (OSData or OSArray of OSData) as a resource template.
+     * @object The object returned by ACPI evaluation
+     * @res_parser The parser to feed
+     * @source Human readable name used for logging and registry diagnostics
+     *
+     * @return *kIOReturnSuccess* when the object could be parsed
+     */
+
+    IOReturn parseResourceObject(OSObject* object, VoodooI2CACPIResourcesParser* res_parser, const char* source);
+
     /* Searches the IOService plane to find a <VoodooGPIO> controller object.
      */
 
