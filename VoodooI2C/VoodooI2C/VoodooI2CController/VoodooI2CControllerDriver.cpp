@@ -399,14 +399,22 @@ VoodooI2CControllerDriver* VoodooI2CControllerDriver::probe(IOService* provider,
 IOReturn VoodooI2CControllerDriver::publishNubs() {
     IOLog("%s::%s Publishing device nubs\n", getName(), bus_device.name);
 
-    IOService* child;
     OSIterator* children = nub->controller->physical_device.acpi_device->getChildIterator(gIOACPIPlane);
 
     if (!children)
         return kIOReturnNoResources;
 
-    while ((child = OSDynamicCast(IOService, children->getNextObject()))) {
-        IOLog("%s::%s Found I2C device: %s\n", getName(), bus_device.name, getMatchedName(child));
+    OSObject* object;
+    while ((object = children->getNextObject())) {
+        IOService* child = OSDynamicCast(IOService, object);
+        if (!child)
+            continue;
+
+        const char* child_name = getMatchedName(child);
+        if (!child_name)
+            child_name = child->getName();
+
+        IOLog("%s::%s Found I2C device: %s\n", getName(), bus_device.name, child_name);
 
         VoodooI2CDeviceNub* device_nub = OSTypeAlloc(VoodooI2CDeviceNub);
         OSDictionary* child_properties = child->dictionaryWithProperties();
@@ -414,10 +422,10 @@ IOReturn VoodooI2CControllerDriver::publishNubs() {
         if (!device_nub ||
             !device_nub->init(child_properties) ||
             !device_nub->attach(this, child)) {
-            IOLog("%s::%s Could not initialise nub for %s\n", getName(), bus_device.name, getMatchedName(child));
+            IOLog("%s::%s Could not initialise nub for %s\n", getName(), bus_device.name, child_name);
         } else if (!device_nub->start(this)) {
             device_nub->detach(this);
-            IOLog("%s::%s Could not start nub for %s\n", getName(), bus_device.name, getMatchedName(child));
+            IOLog("%s::%s Could not start nub for %s\n", getName(), bus_device.name, child_name);
         } else {
             device_nubs->setObject(device_nub);
         }
@@ -593,6 +601,8 @@ IOReturn VoodooI2CControllerDriver::setPowerState(unsigned long whichState, IOSe
 }
 
 bool VoodooI2CControllerDriver::start(IOService* provider) {
+    bool pm_ready = false;
+
     if (!super::start(provider))
         return false;
 
@@ -620,6 +630,7 @@ bool VoodooI2CControllerDriver::start(IOService* provider) {
     }
 
     PMinit();
+    pm_ready = true;
     nub->joinPMtree(this);
     registerPowerDriver(this, VoodooI2CIOPMPowerStates, kVoodooI2CIOPMNumberPowerStates);
 
@@ -646,7 +657,7 @@ bool VoodooI2CControllerDriver::start(IOService* provider) {
 
     if (initialiseBus() != kIOReturnSuccess) {
         IOLog("%s::%s Could not initialise bus\n", getName(), bus_device.name);
-        return false;
+        goto exit;
     }
 
     toggleInterrupts(kVoodooI2CStateOff);
@@ -664,6 +675,8 @@ bool VoodooI2CControllerDriver::start(IOService* provider) {
     return true;
 exit:
     releaseResources();
+    if (pm_ready)
+        PMstop();
     return false;
 }
 

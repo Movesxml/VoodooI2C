@@ -10,6 +10,7 @@
 #include "VoodooI2CDeviceNub.hpp"
 
 #include <Availability.h>
+#include <string.h>
 
 #ifndef __ACIDANTHERA_MAC_SDK
 #error "This kext SDK is unsupported. Download from https://github.com/acidanthera/MacKernelSDK"
@@ -310,9 +311,11 @@ VoodooGPIO* VoodooI2CDeviceNub::getGPIOController() {
     gpio_controller = OSDynamicCast(VoodooGPIO, matched);
 
     if (gpio_controller != NULL) {
+        // Keep our own reference; the wait reference is dropped below.
+        gpio_controller->retain();
         IOLog("%s::%s Got GPIO Controller! %s\n", getName(), acpi_device->getName(), gpio_controller->getName());
     }
-    name_match->release();
+    OSSafeReleaseNULL(name_match);
     OSSafeReleaseNULL(matched);
 
     return gpio_controller;
@@ -388,7 +391,19 @@ bool VoodooI2CDeviceNub::start(IOService* provider) {
         goto exit;
     }
 
-    setProperty("IOName", reinterpret_cast<const char*>(OSDynamicCast(OSData, getProperty("name"))->getBytesNoCopy()));
+    OSData* acpi_name = OSDynamicCast(OSData, getProperty("name"));
+    if (acpi_name && acpi_name->getBytesNoCopy() && acpi_name->getLength() > 0) {
+        // ACPI names are 4 bytes and are not NUL terminated; build a proper
+        // C string before publishing IOName.
+        char name_buffer[5] = {0, 0, 0, 0, 0};
+        UInt32 name_length = acpi_name->getLength();
+        if (name_length > sizeof(name_buffer) - 1)
+            name_length = sizeof(name_buffer) - 1;
+        memcpy(name_buffer, acpi_name->getBytesNoCopy(), name_length);
+        setProperty("IOName", name_buffer);
+    } else {
+        IOLog("%s::%s Warning: ACPI device has no 'name' property\n", controller_name, getName());
+    }
 
     registerService();
 
@@ -402,6 +417,7 @@ exit:
 
 void VoodooI2CDeviceNub::stop(IOService* provider) {
     releaseResources();
+    OSSafeReleaseNULL(gpio_controller);
     super::stop(provider);
 }
 

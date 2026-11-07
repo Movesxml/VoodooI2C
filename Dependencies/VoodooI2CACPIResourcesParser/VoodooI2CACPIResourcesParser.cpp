@@ -17,12 +17,17 @@
 VoodooI2CACPIResourcesParser::VoodooI2CACPIResourcesParser() {
     found_gpio_interrupts = false;
     found_i2c = false;
+    found_gpio_io = false;
+
+    memset(&i2c_info, 0, sizeof(i2c_info));
+    memset(&gpio_interrupts, 0, sizeof(gpio_interrupts));
+    memset(&gpio_io, 0, sizeof(gpio_io));
 }
 
 void VoodooI2CACPIResourcesParser::parseACPISerialBus(uint8_t const* res, uint32_t offset, uint32_t sz) {
     if (found_i2c)
         return;
-    if (offset >= sz)
+    if (offset >= sz || offset + 18 > sz)
         return;
     uint8_t opcode = res[offset];
     if (opcode != 0x8e)
@@ -69,7 +74,7 @@ void VoodooI2CACPIResourcesParser::parseACPISerialBus(uint8_t const* res, uint32
 void VoodooI2CACPIResourcesParser::parseACPIGPIO(uint8_t const* res, uint32_t offset, uint32_t sz) {
     if (found_gpio_interrupts)
         return;
-    if (offset >= sz)
+    if (offset >= sz || offset + 18 > sz)
         return;
     
     uint8_t opcode = res[offset];
@@ -88,7 +93,12 @@ void VoodooI2CACPIResourcesParser::parseACPIGPIO(uint8_t const* res, uint32_t of
     
     uint16_t pin_offset;
     memcpy(&pin_offset, res + offset + 14, sizeof(uint16_t));
-    
+
+    // The pin number is stored at the vendor defined offset, make sure the
+    // descriptor is large enough before reading it.
+    if (pin_offset < 18 || offset + pin_offset + 2 > sz)
+        return;
+
     /*uint16_t resourceOffset;
     memcpy(&resourceOffset, res + offset + 17, sizeof(uint16_t));
     
@@ -168,19 +178,25 @@ void VoodooI2CACPIResourcesParser::parseACPIGPIO(uint8_t const* res, uint32_t of
 }
 
 void VoodooI2CACPIResourcesParser::parseACPIResources(uint8_t const* res, uint32_t offset, uint32_t sz) {
-    if (offset >= sz)
-        return;
-    
-    uint8_t opcode = res[offset];
-    
-    uint16_t len;
-    memcpy(&len, res + offset + 1, sizeof(uint16_t));
-    
-    if (opcode == 0x8c)
-        parseACPIGPIO(res, offset, sz);
-    if (opcode == 0x8e)
-        parseACPISerialBus(res, offset, sz);
-    
-    offset += (len + 3);
-    parseACPIResources(res, offset, sz);
+    // Iterate over the resource template instead of recursing: malformed or
+    // hostile tables must not be able to overflow the kernel stack.
+    while (offset + 3 <= sz) {
+        uint8_t opcode = res[offset];
+
+        uint16_t len;
+        memcpy(&len, res + offset + 1, sizeof(uint16_t));
+
+        uint32_t next = offset + (uint32_t)len + 3;
+
+        // A zero/overflowing length would loop forever, stop on malformed data.
+        if (next <= offset || next > sz)
+            break;
+
+        if (opcode == 0x8c)
+            parseACPIGPIO(res, offset, next);
+        if (opcode == 0x8e)
+            parseACPISerialBus(res, offset, next);
+
+        offset = next;
+    }
 }
