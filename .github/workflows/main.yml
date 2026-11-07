@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build VoodooI2C and satellites
     runs-on: macos-latest
+    env:
+      JOB_TYPE: BUILD
 
     steps:
       - name: Checkout VoodooI2C
