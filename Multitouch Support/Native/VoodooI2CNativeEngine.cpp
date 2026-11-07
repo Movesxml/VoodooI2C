@@ -17,7 +17,6 @@ MultitouchReturn VoodooI2CNativeEngine::handleInterruptReport(VoodooI2CMultitouc
     }
 
     message.timestamp = timestamp;
-    message.contact_count = event.contact_count;
     memset(message.transducers, 0, VOODOO_INPUT_MAX_TRANSDUCERS * sizeof(VoodooInputTransducer));
     
     VoodooI2CDigitiserTransducer* firstTransducer = (VoodooI2CDigitiserTransducer*) event.transducers->getObject(0);
@@ -34,6 +33,8 @@ MultitouchReturn VoodooI2CNativeEngine::handleInterruptReport(VoodooI2CMultitouc
     int contact_count = event.contact_count;
     if (contact_count > VOODOO_INPUT_MAX_TRANSDUCERS)
         contact_count = VOODOO_INPUT_MAX_TRANSDUCERS;
+
+    message.contact_count = contact_count;
 
     for (int i = 0; i < contact_count; i++) {
         VoodooI2CDigitiserTransducer* transducer = (VoodooI2CDigitiserTransducer*) event.transducers->getObject(i+stylus_check);
