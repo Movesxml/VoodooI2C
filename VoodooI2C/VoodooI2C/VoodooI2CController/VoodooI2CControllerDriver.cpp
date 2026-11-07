@@ -595,6 +595,10 @@ IOReturn VoodooI2CControllerDriver::setPowerState(unsigned long whichState, IOSe
 bool VoodooI2CControllerDriver::start(IOService* provider) {
     if (!super::start(provider))
         return false;
+
+    IOLog("%s::%s VoodooI2C 3.1.0 starting (ELAN0001 bring-up build)\n",
+          getName(), bus_device.name);
+
     i2c_bus_lock = IOLockAlloc();
     if (!i2c_bus_lock) {
         IOLog("%s::%s Could not allocate I2C bus lock\n", getName(), bus_device.name);

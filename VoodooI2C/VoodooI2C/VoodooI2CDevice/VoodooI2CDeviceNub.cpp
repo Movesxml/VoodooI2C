@@ -232,6 +232,17 @@ IOReturn VoodooI2CDeviceNub::getDeviceResources() {
     bus_parser = crs_parser.found_i2c ? &crs_parser : &dsm_parser;
 
     /*
+     * Sanity check: if _CRS advertises a zero slave address (some tables only
+     * fill it in lazily) prefer the value reported through _DSM, if any.
+     */
+    if (bus_parser->i2c_info.address == 0 && dsm_parser.found_i2c &&
+        dsm_parser.i2c_info.address != 0) {
+        IOLog("%s::%s _CRS reported I2C address 0, using _DSM value 0x%x instead\n",
+              getName(), acpi_device->getName(), dsm_parser.i2c_info.address);
+        bus_parser = &dsm_parser;
+    }
+
+    /*
      * Interrupt resources may legitimately live in either method: prefer the
      * GPIO interrupt from _CRS, then from _DSM.
      */
