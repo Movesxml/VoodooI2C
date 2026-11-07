@@ -3,7 +3,7 @@
 //  VoodooI2C
 //
 //  Created by Alexandre on 03/08/2017.
-//  Copyright © 2017 Alexandre Daoud. All rights reserved.
+//  Copyright 漏 2017 Alexandre Daoud. All rights reserved.
 //
 #include <libkern/OSDebug.h>
 
@@ -606,7 +606,7 @@ bool VoodooI2CControllerDriver::start(IOService* provider) {
     if (!super::start(provider))
         return false;
 
-    IOLog("%s::%s VoodooI2C 3.1.0 starting (ELAN0001 bring-up build)\n",
+    IOLog("%s::%s VoodooI2C 3.1.1 starting (ELAN0001 bring-up build)\n",
           getName(), bus_device.name);
 
     i2c_bus_lock = IOLockAlloc();
@@ -889,3 +889,4 @@ void VoodooI2CControllerDriver::stopI2CInterrupt() {
         is_interrupt_registered = false;
     }
 }
+
