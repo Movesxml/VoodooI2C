@@ -1,9 +1,9 @@
-//
+﻿//
 //  VoodooI2CMultitouchInterface.cpp
 //  VoodooI2C
 //
 //  Created by Alexandre on 22/09/2017.
-//  Copyright © 2017 Alexandre Daoud. All rights reserved.
+//  Copyright 漏 2017 Alexandre Daoud. All rights reserved.
 //
 
 #include "VoodooI2CMultitouchInterface.hpp"
@@ -58,6 +58,9 @@ bool VoodooI2CMultitouchInterface::setProperty(const OSSymbol* key, OSObject* ob
     if (!super::setProperty(key, object)) {
         return false;
     }
+    if (!engines) {
+        return true;
+    }
     for (int i = 0; i < engines->getCount(); i++) {
         if (VoodooI2CMultitouchEngine* engine = OSDynamicCast(VoodooI2CMultitouchEngine, engines->getObject(i))) {
             engine->onPropertyChange();
@@ -96,3 +99,4 @@ void VoodooI2CMultitouchInterface::stop(IOService* provider) {
 bool VoodooI2CMultitouchInterface::willTerminate(IOService *provider, IOOptionBits options) {
     return super::willTerminate(provider, options);
 }
+

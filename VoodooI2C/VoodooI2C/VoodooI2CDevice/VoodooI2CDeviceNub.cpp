@@ -375,6 +375,8 @@ void VoodooI2CDeviceNub::releaseResources() {
 }
 
 bool VoodooI2CDeviceNub::start(IOService* provider) {
+    OSData* acpi_name = nullptr;
+
     if (!super::start(provider))
         return false;
 
@@ -391,7 +393,7 @@ bool VoodooI2CDeviceNub::start(IOService* provider) {
         goto exit;
     }
 
-    OSData* acpi_name = OSDynamicCast(OSData, getProperty("name"));
+    acpi_name = OSDynamicCast(OSData, getProperty("name"));
     if (acpi_name && acpi_name->getBytesNoCopy() && acpi_name->getLength() > 0) {
         // ACPI names are 4 bytes and are not NUL terminated; build a proper
         // C string before publishing IOName.

@@ -30,7 +30,12 @@ MultitouchReturn VoodooI2CNativeEngine::handleInterruptReport(VoodooI2CMultitouc
 
     int valid_touch_count = 0;
 
-    for (int i = 0; i < event.contact_count; i++) {
+    // Never index past the fixed size of the VoodooInput event buffer.
+    int contact_count = event.contact_count;
+    if (contact_count > VOODOO_INPUT_MAX_TRANSDUCERS)
+        contact_count = VOODOO_INPUT_MAX_TRANSDUCERS;
+
+    for (int i = 0; i < contact_count; i++) {
         VoodooI2CDigitiserTransducer* transducer = (VoodooI2CDigitiserTransducer*) event.transducers->getObject(i+stylus_check);
         VoodooInputTransducer* inputTransducer = &message.transducers[i];
         
@@ -86,7 +91,7 @@ MultitouchReturn VoodooI2CNativeEngine::handleInterruptReport(VoodooI2CMultitouc
         // simple thumb detection: to find the lowest finger touch in the vertical direction.
         UInt32 y_max = 0;
         int thumb_index = 0;
-        for (int i = 0; i < event.contact_count; i++) {
+        for (int i = 0; i < contact_count; i++) {
             VoodooInputTransducer* inputTransducer = &message.transducers[i];
             if (inputTransducer->isValid && inputTransducer->currentCoordinates.y >= y_max) {
                 y_max = inputTransducer->currentCoordinates.y;
