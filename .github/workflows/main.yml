@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PROJECT_TYPE: KEXT
+
+jobs:
+  build:
+    name: Build VoodooI2C and satellites
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout VoodooI2C
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 500
+
+      - name: Checkout MacKernelSDK
+        uses: actions/checkout@v4
+        with:
+          repository: acidanthera/MacKernelSDK
+          path: MacKernelSDK
+
+      - name: CI Bootstrap
+        run: |
+          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
+
+      - name: VoodooInput Bootstrap
+        run: |
+          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/VoodooInput/master/VoodooInput/Scripts/bootstrap.sh) && eval "$src" && mv VoodooInput Dependencies
+
+      - name: Build Debug VoodooI2C
+        run: xcodebuild -workspace VoodooI2C.xcworkspace -scheme VoodooI2C -derivedDataPath build -jobs 1 -configuration Debug
+
+      - name: Build Release VoodooI2C
+        run: xcodebuild -workspace VoodooI2C.xcworkspace -scheme VoodooI2C -derivedDataPath build -jobs 1 -configuration Release
+
+      - name: Show built products
+        run: |
+          set -x
+          find build/Build/Products -maxdepth 3 \( -name '*.zip' -o -name '*.kext' \) -print
+          for z in build/Build/Products/*/*.zip; do unzip -l "$z"; done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoodooI2C-build
+          path: build/Build/Products/*/*.zip
