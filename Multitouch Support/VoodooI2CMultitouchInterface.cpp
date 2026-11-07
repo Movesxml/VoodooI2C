@@ -1,4 +1,4 @@
-﻿//
+//
 //  VoodooI2CMultitouchInterface.cpp
 //  VoodooI2C
 //

@@ -1,4 +1,4 @@
-﻿[submodule "Dependencies/VoodooGPIO"]
+[submodule "Dependencies/VoodooGPIO"]
 	path = Dependencies/VoodooGPIO
 	url = https://github.com/VoodooI2C/VoodooGPIO.git
 [submodule "VoodooI2C Satellites/VoodooI2CHID"]
